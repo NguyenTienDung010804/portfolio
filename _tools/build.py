@@ -15,7 +15,9 @@ helmet = re.search(r'<helmet>(.*?)</helmet>', t, re.S).group(1)
 body = re.search(r'</helmet>(.*?)</x-dc>', t, re.S).group(1)
 title = re.search(r'<title>.*?</title>', t).group(0)
 fix = lambda s: re.sub(r'/_blob/([0-9a-f]+)', lambda m: 'img/' + names[m.group(1)], s)
+import hashlib
+ver = hashlib.md5(open(os.path.join(out, 'comments.js'), 'rb').read()).hexdigest()[:8]
 open(os.path.join(out, 'index.html'), 'w').write(
     f'<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n{title}\n{fix(helmet)}\n</head>\n<body>\n{fix(body)}\n<script>window.PFC_API="https://script.google.com/macros/s/AKfycbyQ06l4YIH_-Jl6RyuPqZngkhguKNeQVLRCsvALCMFCiFzRrBTey3BtrYDBbGGF1bge_Q/exec"</script>
-<script src="comments.js" defer></script>\n</body>\n</html>\n')
+<script src="comments.js?v={ver}" defer></script>\n</body>\n</html>\n')
 print(len(names), 'images')

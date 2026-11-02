@@ -190,7 +190,8 @@
       p.innerHTML = '<div class="meta">#' + n + ' · ' + esc(it.name || 'Mentor') + (own ? '<span class="mine">(của bạn)</span>' : '') + ' · ' + new Date(it.date).toLocaleDateString('vi-VN') + (it.done ? ' · đã xử lý' : '') + '</div>' +
         '<div class="body">' + esc(it.text) + '</div>' +
         '<div class="row">' + (own ? '<button class="danger" data-a="del" type="button">Xoá</button><button class="sec" data-a="edit" type="button">Sửa</button>' : '') +
-        '<button class="pri" data-a="close" type="button">Đóng</button></div>';
+        '<button class="pri" data-a="close" type="button">Đóng</button></div>' +
+        (own ? '' : '<div class="note">Chỉ người gửi góp ý này (trên đúng trình duyệt đã gửi) mới sửa/xoá được.</div>');
       p.querySelector('[data-a=close]').onclick = closePop;
       if (!own) return;
       p.querySelector('[data-a=edit]').onclick = edit;
