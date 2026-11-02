@@ -1,9 +1,7 @@
-/* Comment mode for GitHub Pages.
- * Click an element or drag a box, write feedback -> saved as a GitHub Issue.
- * Existing issues that carry an anchor are drawn back onto the page as numbered pins. */
+/* Comment mode: click an element or drag a box, write feedback -> saved to a Google Sheet
+ * through an Apps Script web app (window.PFC_API). Saved comments are drawn back as numbered pins. */
 (function () {
-  var REPO = 'NguyenTienDung010804/portfolio';
-  var TAG = 'pf-anchor';
+  var API = window.PFC_API || '';
   var store = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
                 set: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} } };
 
@@ -143,32 +141,39 @@
     var a = makeAnchor(target, box);
     var p = el('div', { class: 'pfc-pop' },
       '<div class="meta">Góp ý cho: ' + esc(a.txt || target.tagName.toLowerCase()) + '</div>' +
+      '<input class="pfc-name" placeholder="Tên của bạn (không bắt buộc)" style="width:100%;box-sizing:border-box;border:1px solid #d9cfe9;border-radius:8px;padding:8px;font:inherit;margin-bottom:8px;cursor:text!important">' +
       '<textarea placeholder="Viết góp ý…"></textarea>' +
-      '<div class="row"><button class="sec" type="button">Huỷ</button><button class="pri" type="button">Gửi qua GitHub</button></div>' +
-      '<div class="note">Sẽ mở GitHub ở tab mới, bấm <b>Create</b> để lưu. Cần đăng nhập GitHub.</div>');
+      '<input class="pfc-hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px">' +
+      '<div class="row"><button class="sec" type="button">Huỷ</button><button class="pri" type="button">Gửi góp ý</button></div>');
     place(p, box.x, box.y + box.h);
-    var ta = p.querySelector('textarea'); ta.focus();
+    var ta = p.querySelector('textarea'), nm = p.querySelector('.pfc-name');
+    nm.value = store.get('pfc-name') || ''; (nm.value ? ta : nm).focus();
     p.querySelector('.sec').onclick = closePop;
-    p.querySelector('.pri').onclick = function () {
+    var send = p.querySelector('.pri');
+    send.onclick = function () {
       var text = ta.value.trim(); if (!text) { ta.focus(); return; }
-      var title = '[Comment] ' + text.replace(/\s+/g, ' ').slice(0, 70);
-      var body = text + '\n\n---\nVị trí: **' + (a.txt || a.sel) + '**\nTrang: ' + location.href.split('#')[0] +
-        '\n\n<!-- ' + TAG + ' ' + JSON.stringify(a) + ' -->';
-      window.open('https://github.com/' + REPO + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body), '_blank', 'noopener');
-      closePop(); setMode(false);
-      p = el('div', { class: 'pfc-pop' }, '<div class="body">Đã mở GitHub. Sau khi bấm <b>Create</b>, tải lại trang này để thấy ghim mới.</div><div class="row"><button class="pri" type="button">OK</button></div>');
-      place(p, box.x, box.y + box.h); p.querySelector('button').onclick = closePop;
-      try { sessionStorage.removeItem('pfc-cache'); } catch (e) {}
+      var name = nm.value.trim(); store.set('pfc-name', name);
+      send.disabled = true; send.textContent = 'Đang gửi…';
+      fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ name: name, text: text, where: a.txt || a.sel, anchor: a, hp: p.querySelector('.pfc-hp').value }) })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.ok) throw new Error(res.error || 'fail');
+          closePop(); setMode(false);
+          issues.push({ anchor: a, text: text, name: name || 'Mentor', date: new Date().toISOString(), done: false, id: res.id });
+          render(); flash('Đã gửi góp ý. Cảm ơn bạn!');
+        })
+        .catch(function () { send.disabled = false; send.textContent = 'Gửi lại'; flash('Gửi chưa được, thử lại nhé.'); });
     };
   }
+  function flash(msg) { hint.textContent = msg; hint.style.display = 'block'; clearTimeout(flash.t); flash.t = setTimeout(function () { hint.style.display = on ? 'block' : 'none'; hint.textContent = 'Bấm vào một phần tử hoặc kéo chuột để khoanh vùng · Esc để thoát'; }, 2500); }
   function showIssue(it, n) {
     closePop();
     var pos = resolve(it.anchor);
-    var text = it.body.split('\n\n---\n')[0];
     var p = el('div', { class: 'pfc-pop' },
-      '<div class="meta">#' + n + ' · ' + esc(it.user) + ' · ' + new Date(it.date).toLocaleDateString('vi-VN') + (it.closed ? ' · đã xử lý' : '') + '</div>' +
-      '<div class="body">' + esc(text) + '</div>' +
-      '<div class="row"><a class="sec" style="border-radius:8px;padding:8px 12px;background:#f1ecf8;color:#3E1A75;text-decoration:none" href="' + it.url + '" target="_blank" rel="noopener">Trả lời trên GitHub</a><button class="pri" type="button">Đóng</button></div>');
+      '<div class="meta">#' + n + ' · ' + esc(it.name || 'Mentor') + ' · ' + new Date(it.date).toLocaleDateString('vi-VN') + (it.done ? ' · đã xử lý' : '') + '</div>' +
+      '<div class="body">' + esc(it.text) + '</div>' +
+      '<div class="row"><button class="pri" type="button">Đóng</button></div>');
     place(p, pos.x, pos.y + pos.h);
     p.querySelector('button').onclick = closePop;
   }
@@ -179,7 +184,7 @@
     issues.forEach(function (it, i) {
       var r = resolve(it.anchor);
       var box = el('div', { class: 'pfc-box' }); Object.assign(box.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
-      var pin = el('div', { class: 'pfc-pin' + (it.closed ? ' done' : ''), title: it.body.split('\n')[0].slice(0, 80) }, String(i + 1));
+      var pin = el('div', { class: 'pfc-pin' + (it.done ? ' done' : ''), title: String(it.text).slice(0, 80) }, String(i + 1));
       Object.assign(pin.style, { left: (r.x + r.w) + 'px', top: r.y + 'px' });
       pin.onmouseenter = function () { box.classList.add('show'); };
       pin.onmouseleave = function () { box.classList.remove('show'); };
@@ -188,19 +193,15 @@
     });
   }
   function parse(list) {
-    var re = new RegExp('<!-- ' + TAG + ' (\\{.*?\\}) -->');
-    issues = list.filter(function (x) { return !x.pull_request && x.body && re.test(x.body); }).map(function (x) {
-      return { anchor: JSON.parse(x.body.match(re)[1]), body: x.body, user: x.user && x.user.login, date: x.created_at, closed: x.state === 'closed', url: x.html_url, n: x.number };
-    }).sort(function (a, b) { return a.n - b.n; });
+    issues = (list || []).map(function (x) {
+      var an = x.anchor; if (typeof an === 'string') { try { an = JSON.parse(an); } catch (e) { an = null; } }
+      return an && an.p ? { anchor: an, text: x.text, name: x.name, date: x.date, done: !!x.done, id: x.id } : null;
+    }).filter(Boolean).sort(function (a, b) { return a.id - b.id; });
     render();
   }
   function load() {
-    var c = store.get('pfc-cache');
-    if (c) { try { var o = JSON.parse(c); if (Date.now() - o.t < 60000) return parse(o.d); } catch (e) {} }
-    fetch('https://api.github.com/repos/' + REPO + '/issues?state=all&per_page=100')
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (d) { store.set('pfc-cache', JSON.stringify({ t: Date.now(), d: d })); parse(d); })
-      .catch(function () {});
+    if (!API) return;
+    fetch(API).then(function (r) { return r.json(); }).then(function (d) { parse(d.items); }).catch(function () {});
   }
   var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(render, 150); });
   addEventListener('load', function () { setTimeout(render, 300); });
