@@ -2,13 +2,25 @@
  * through an Apps Script web app (window.PFC_API). Saved comments are drawn back as numbered pins. */
 (function () {
   var API = window.PFC_API || '';
+  var mine = {}; try { mine = JSON.parse(localStorage.getItem('pfc-mine') || '{}'); } catch (e) {}
+  function saveMine() { try { localStorage.setItem('pfc-mine', JSON.stringify(mine)); } catch (e) {} }
+  function post(o) { return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(o) }).then(function (r) { return r.json(); }).then(function (r) { if (!r.ok) throw new Error(r.error || 'fail'); return r; }); }
   var store = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
                 set: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} } };
 
   var css = '' +
     '#pfc-ui{position:fixed;right:20px;bottom:20px;z-index:2147483000;display:flex;gap:8px;font:500 14px/1 Geist,system-ui,sans-serif}' +
+    '#pfc-ui{align-items:center;right:24px;bottom:24px}' +
     '#pfc-ui button{border:0;border-radius:999px;padding:12px 18px;cursor:pointer;box-shadow:0 6px 24px rgba(40,20,80,.22);font:inherit}' +
-    '#pfc-toggle{background:#3E1A75;color:#fff}#pfc-toggle.on{background:#E8590C}' +
+    '#pfc-toggle{background:linear-gradient(135deg,#6A2FB8,#3E1A75);color:#fff;font-size:18px!important;font-weight:600!important;padding:18px 28px!important;box-shadow:0 10px 32px rgba(62,26,117,.45)!important;animation:pfc-pulse 2.4s ease-in-out infinite}' +
+    '#pfc-toggle.on{background:#E8590C;animation:none}#pfc-toggle:hover{transform:translateY(-2px)}' +
+    '@keyframes pfc-pulse{0%,100%{box-shadow:0 10px 32px rgba(62,26,117,.45),0 0 0 0 rgba(106,47,184,.45)}50%{box-shadow:0 10px 32px rgba(62,26,117,.45),0 0 0 14px rgba(106,47,184,0)}}' +
+    '#pfc-call{position:fixed;right:24px;bottom:96px;z-index:2147483000;width:300px;max-width:calc(100vw - 48px);background:#fff;color:#1d1230;border-radius:16px;padding:18px 20px 16px;box-shadow:0 16px 48px rgba(30,10,60,.3);font:15px/1.5 Geist,system-ui,sans-serif;animation:pfc-in .5s cubic-bezier(.2,.9,.3,1.3) both}' +
+    '#pfc-call:after{content:"";position:absolute;right:48px;bottom:-8px;width:16px;height:16px;background:#fff;transform:rotate(45deg)}' +
+    '#pfc-call b{display:block;font-size:17px;margin-bottom:4px;color:#3E1A75}#pfc-call .x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:20px;color:#9a93a8;cursor:pointer;padding:4px}' +
+    '#pfc-call .go{margin-top:12px;border:0;border-radius:10px;padding:10px 14px;background:#6A2FB8;color:#fff;font:600 14px Geist,system-ui,sans-serif;cursor:pointer}' +
+    '@keyframes pfc-in{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}' +
+    '.pfc-pop .danger{background:#fdecea;color:#b42318}.pfc-pop .mine{font-size:11px;color:#6A2FB8;margin-left:4px}' +
     '#pfc-show{background:#fff;color:#3E1A75}' +
     '#pfc-hint{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483000;background:#1d1230;color:#fff;padding:10px 16px;border-radius:10px;font:14px/1.4 Geist,system-ui,sans-serif;display:none;box-shadow:0 6px 24px rgba(0,0,0,.25)}' +
     'body.pfc-on,body.pfc-on *{cursor:crosshair!important}' +
@@ -34,7 +46,7 @@
 
   var ui = el('div', { id: 'pfc-ui' });
   var showBtn = el('button', { id: 'pfc-show', type: 'button' }, 'Ẩn ghim');
-  var toggle = el('button', { id: 'pfc-toggle', type: 'button' }, '💬 Comment');
+  var toggle = el('button', { id: 'pfc-toggle', type: 'button' }, '💬 Góp ý tại đây');
   ui.appendChild(showBtn); ui.appendChild(toggle);
   var hint = el('div', { id: 'pfc-hint' }, 'Bấm vào một phần tử hoặc kéo chuột để khoanh vùng · Esc để thoát');
   var hover = el('div', { id: 'pfc-hover' });
@@ -44,14 +56,19 @@
   document.body.appendChild(hint); document.body.appendChild(ui);
 
   var on = false, pinsVisible = true, pop = null, issues = [];
-  function isUI(t) { return t && t.closest && t.closest('#pfc-ui,.pfc-pop,.pfc-pin,#pfc-hint'); }
+  function isUI(t) { return t && t.closest && t.closest('#pfc-ui,.pfc-pop,.pfc-pin,#pfc-hint,#pfc-call'); }
 
   function setMode(v) {
-    on = v; toggle.classList.toggle('on', on); toggle.textContent = on ? '✕ Thoát comment' : '💬 Comment';
+    on = v; toggle.classList.toggle('on', on); toggle.textContent = on ? '✕ Thoát góp ý' : '💬 Góp ý tại đây';
     document.body.classList.toggle('pfc-on', on); hint.style.display = on ? 'block' : 'none';
     if (!on) { hover.style.display = 'none'; drag.style.display = 'none'; }
   }
-  toggle.onclick = function () { closePop(); setMode(!on); };
+  toggle.onclick = function () { hideCall(); closePop(); setMode(!on); };
+  var call = el('div', { id: 'pfc-call' }, '<button class="x" type="button" aria-label="Đóng">×</button><b>Góp ý trực tiếp trên trang</b>Bấm nút bên dưới, rồi bấm vào chỗ bất kỳ hoặc kéo chuột khoanh vùng để để lại nhận xét. Không cần đăng nhập.<br><button class="go" type="button">Bắt đầu góp ý →</button>');
+  function hideCall() { if (call.parentNode) call.remove(); }
+  call.querySelector('.x').onclick = hideCall;
+  call.querySelector('.go').onclick = function () { hideCall(); closePop(); setMode(true); };
+  setTimeout(function () { if (!on) document.body.appendChild(call); }, 1200);
   showBtn.onclick = function () { pinsVisible = !pinsVisible; layer.style.display = pinsVisible ? '' : 'none'; showBtn.textContent = pinsVisible ? 'Ẩn ghim' : 'Hiện ghim'; };
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePop(); setMode(false); } });
 
@@ -154,11 +171,9 @@
       var text = ta.value.trim(); if (!text) { ta.focus(); return; }
       var name = nm.value.trim(); store.set('pfc-name', name);
       send.disabled = true; send.textContent = 'Đang gửi…';
-      fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ name: name, text: text, where: a.txt || a.sel, anchor: a, hp: p.querySelector('.pfc-hp').value }) })
-        .then(function (r) { return r.json(); })
+      post({ action: 'create', name: name, text: text, where: a.txt || a.sel, anchor: a, hp: p.querySelector('.pfc-hp').value })
         .then(function (res) {
-          if (!res.ok) throw new Error(res.error || 'fail');
+          if (res.token) { mine[res.id] = res.token; saveMine(); }
           closePop(); setMode(false);
           issues.push({ anchor: a, text: text, name: name || 'Mentor', date: new Date().toISOString(), done: false, id: res.id });
           render(); flash('Đã gửi góp ý. Cảm ơn bạn!');
@@ -169,13 +184,43 @@
   function flash(msg) { hint.textContent = msg; hint.style.display = 'block'; clearTimeout(flash.t); flash.t = setTimeout(function () { hint.style.display = on ? 'block' : 'none'; hint.textContent = 'Bấm vào một phần tử hoặc kéo chuột để khoanh vùng · Esc để thoát'; }, 2500); }
   function showIssue(it, n) {
     closePop();
-    var pos = resolve(it.anchor);
-    var p = el('div', { class: 'pfc-pop' },
-      '<div class="meta">#' + n + ' · ' + esc(it.name || 'Mentor') + ' · ' + new Date(it.date).toLocaleDateString('vi-VN') + (it.done ? ' · đã xử lý' : '') + '</div>' +
-      '<div class="body">' + esc(it.text) + '</div>' +
-      '<div class="row"><button class="pri" type="button">Đóng</button></div>');
-    place(p, pos.x, pos.y + pos.h);
-    p.querySelector('button').onclick = closePop;
+    var pos = resolve(it.anchor), own = !!mine[it.id];
+    var p = el('div', { class: 'pfc-pop' });
+    function view() {
+      p.innerHTML = '<div class="meta">#' + n + ' · ' + esc(it.name || 'Mentor') + (own ? '<span class="mine">(của bạn)</span>' : '') + ' · ' + new Date(it.date).toLocaleDateString('vi-VN') + (it.done ? ' · đã xử lý' : '') + '</div>' +
+        '<div class="body">' + esc(it.text) + '</div>' +
+        '<div class="row">' + (own ? '<button class="danger" data-a="del" type="button">Xoá</button><button class="sec" data-a="edit" type="button">Sửa</button>' : '') +
+        '<button class="pri" data-a="close" type="button">Đóng</button></div>';
+      p.querySelector('[data-a=close]').onclick = closePop;
+      if (!own) return;
+      p.querySelector('[data-a=edit]').onclick = edit;
+      var del = p.querySelector('[data-a=del]');
+      del.onclick = function () {
+        if (!del.dataset.sure) { del.dataset.sure = 1; del.textContent = 'Xoá thật?'; return; }
+        del.disabled = true; del.textContent = 'Đang xoá…';
+        post({ action: 'delete', id: it.id, token: mine[it.id] }).then(function () {
+          delete mine[it.id]; saveMine(); issues = issues.filter(function (x) { return x !== it; }); closePop(); render(); flash('Đã xoá góp ý.');
+        }).catch(function (e) {
+          if (/notfound/.test(e.message)) { issues = issues.filter(function (x) { return x !== it; }); closePop(); render(); return; }
+          del.disabled = false; del.textContent = 'Xoá'; delete del.dataset.sure; flash('Xoá chưa được, thử lại nhé.');
+        });
+      };
+    }
+    function edit() {
+      p.innerHTML = '<div class="meta">Sửa góp ý #' + n + '</div><textarea></textarea>' +
+        '<div class="row"><button class="sec" data-a="cancel" type="button">Huỷ</button><button class="pri" data-a="save" type="button">Lưu</button></div>';
+      var ta = p.querySelector('textarea'); ta.value = it.text; ta.focus();
+      p.querySelector('[data-a=cancel]').onclick = view;
+      var sv = p.querySelector('[data-a=save]');
+      sv.onclick = function () {
+        var t = ta.value.trim(); if (!t) { ta.focus(); return; }
+        sv.disabled = true; sv.textContent = 'Đang lưu…';
+        post({ action: 'edit', id: it.id, token: mine[it.id], text: t }).then(function () {
+          it.text = t; render(); view(); flash('Đã lưu thay đổi.');
+        }).catch(function () { sv.disabled = false; sv.textContent = 'Lưu lại'; flash('Lưu chưa được, thử lại nhé.'); });
+      };
+    }
+    view(); place(p, pos.x, pos.y + pos.h);
   }
 
   // ---- load & render pins ----
@@ -196,7 +241,7 @@
     issues = (list || []).map(function (x) {
       var an = x.anchor; if (typeof an === 'string') { try { an = JSON.parse(an); } catch (e) { an = null; } }
       return an && an.p ? { anchor: an, text: x.text, name: x.name, date: x.date, done: !!x.done, id: x.id } : null;
-    }).filter(Boolean).sort(function (a, b) { return a.id - b.id; });
+    }).filter(Boolean).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     render();
   }
   function load() {
