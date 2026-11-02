@@ -39,7 +39,7 @@ function doPost(e) {
     if (action === 'create') {
       var text = String(d.text || '').trim().slice(0, 3000);
       if (!text) return out_({ ok: false, error: 'empty' });
-      var id = Utilities.getUuid().slice(0, 8), token = Utilities.getUuid();
+      var id = 'c' + Utilities.getUuid().slice(0, 8), token = Utilities.getUuid();
       sh.appendRow([id, new Date(), String(d.name || 'Mentor').slice(0, 60), text,
                     String(d.where || '').slice(0, 200), JSON.stringify(d.anchor || {}).slice(0, 2000), '', token]);
       return out_({ ok: true, id: id, token: token });
